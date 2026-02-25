@@ -10,7 +10,11 @@
 #define CYAN "\033[36m"
 #define PURPLE "\033[35m"
 
-#define CLRSCRN "\033[2J"
+#define CLEAR_SCREEN "\033[2J"
+#define RESET_CURSOR "\033[H"
+
+#define HIDE_CURSOR "\033[?25l"
+#define SHOW_CURSOR "\033[?25h"
 
 #define RESET "\033[0m"
 

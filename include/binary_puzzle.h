@@ -12,6 +12,11 @@ typedef enum {
 } binary_puzzle_difficulty_t;
 
 /**
+ * Enter interactive solver.
+ */
+void binary_puzzle_interactive(BinaryPuzzle *self);
+
+/**
  * Print contents of `BinaryPuzzle`.
  */
 void binary_puzzle_print(BinaryPuzzle *self);

@@ -9,7 +9,7 @@ SRC_SRCS := $(filter-out $(SRC_MAIN), $(SRCS))
 
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_SRCS))
 
-CFLAGS := -Wextra -Werror -Wall -Wimplicit -pedantic -Wreturn-type -Wformat -Wmissing-prototypes -Wstrict-prototypes -std=c89 -I$(INCLUDE_DIR) -O3 -DDEBUG
+CFLAGS := -Wextra -Werror -Wall -Wimplicit -pedantic -Wreturn-type -Wformat -Wmissing-prototypes -Wstrict-prototypes -std=c89 -I$(INCLUDE_DIR) -O3
 
 TARGET := $(BIN_DIR)/binary_puzzle
 

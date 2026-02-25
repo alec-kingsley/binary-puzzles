@@ -1,6 +1,6 @@
 # Binary Puzzle Generator
 
-Generates [binary puzzles](https://en.wikipedia.org/wiki/Takuzu)
+Generates interactive [binary puzzles](https://en.wikipedia.org/wiki/Takuzu)
 
 ![demo](./assets/demo.gif)
 
@@ -8,10 +8,37 @@ Generates [binary puzzles](https://en.wikipedia.org/wiki/Takuzu)
 
 Run `make` to build. The resulting binary will be in `./bin/binary_puzzle`.
 
-By default, the binary will animate the creation process of puzzle. To disable this
-(and significantly speed up generation time), remove the `-DDEBUG` flag from the `Makefile`.
+To animate the creation of the puzzle like shown above, add the `-DDEBUG` flag to `CFLAGS`  in the `Makefile`.
+
+To just generate a binary puzzle and not interact with it, replace
+
+```c
+binary_puzzle_interactive(binary_puzzle);
+```
+
+with 
+
+```c
+binary_puzzle_print(binary_puzzle);
+```
+
+## Controls
+
+`h`, `j`, `k` and `l` for movement
+
+`q` to exit
+
+`space` or `enter` to cycle cell options
+
+`0` or `1` to explicitly set a cell
 
 ## Changing Board Settings
 
-See `main.c` to alter the board size (must be an even number greater than 0 and less than 256)
+See `main.c` to alter the board size (must be an even number greater than 0 and less than 256,
+though board sizes greater than around 50 will take annoyingly long to generate)
 and difficulty (must be `BINARY_PUZZLE_EASY`, `BINARY_PUZZLE_MEDIUM`, or `BINARY_PUZZLE_HARD`)
+
+## Todo
+
+- Add win detection
+- Add help menu

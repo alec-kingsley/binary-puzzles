@@ -1,18 +1,31 @@
 #include "binary_puzzle.h"
 #include "colors.h"
 #include "reporter.h"
+#include "string_builder.h"
+#include <errno.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <termios.h>
+#include <unistd.h>
 
 #define FILENAME "binary_puzzle.c"
+
+typedef enum { CELL_ZERO, CELL_ONE, CELL_INVALID, CELL_UNKNOWN } cell_state_t;
 
 struct BinaryPuzzle {
     uint8_t size;
     bool **solution;
     /* false values in mask represent hidden values in solution */
     bool **mask;
+
+    cell_state_t **user_guesses;
+
+    uint8_t i_selected;
+    uint8_t j_selected;
 };
 
 /**
@@ -22,7 +35,35 @@ struct BinaryPuzzle {
  */
 static bool binary_puzzle_initialize(BinaryPuzzle *self);
 
-typedef enum { CELL_ZERO, CELL_ONE, CELL_INVALID, CELL_UNKNOWN } cell_state_t;
+static void **get_empty_board(BinaryPuzzle *self, uint8_t member_size,
+                              uint8_t default_value) {
+    size_t i;
+    void *contents;
+    void **board = calloc(self->size, sizeof(void *));
+    if (board == NULL) {
+        report_system_error(FILENAME ": memory allocation failure");
+        return NULL;
+    }
+
+    contents = calloc(self->size * self->size, member_size);
+    if (contents == NULL) {
+        report_system_error(FILENAME ": memory allocation failure");
+        free(board);
+        return NULL;
+    }
+
+    for (i = 0; i < self->size; i++) {
+        board[i] = (uint8_t*)contents + i * self->size * member_size;
+    }
+
+    if (default_value != 0) {
+        for (i = 0; i < self->size * self->size; i++) {
+            *((uint8_t*)contents + i * member_size) = default_value;
+        }
+    }
+
+    return board;
+}
 
 static cell_state_t binary_puzzle_get_cell_state(BinaryPuzzle *self,
                                                  bool **initialized, size_t i,
@@ -33,6 +74,249 @@ static cell_state_t binary_puzzle_get_cell_state(BinaryPuzzle *self,
         }
     }
     return CELL_UNKNOWN;
+}
+
+struct {
+    uint16_t row_ct;
+    uint16_t col_ct;
+    struct termios orig_termios;
+} g_term;
+
+static void disable_raw_mode(void) {
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_term.orig_termios) == -1) {
+        printf(CLEAR_SCREEN RESET_CURSOR SHOW_CURSOR);
+        report_system_error(FILENAME ": failed to disable raw mode");
+        exit(1);
+    }
+}
+
+static void update_window_size(void) {
+    struct winsize ws;
+
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+        report_system_error(FILENAME ": failed to get window size");
+        exit(1);
+    }
+
+    g_term.col_ct = ws.ws_col;
+    g_term.row_ct = ws.ws_row;
+}
+
+static void enable_raw_mode(void) {
+    struct termios raw;
+
+    if (tcgetattr(STDIN_FILENO, &g_term.orig_termios) == -1) {
+        report_system_error(FILENAME ": failed to get terminal attributes");
+        exit(1);
+    }
+    atexit(disable_raw_mode);
+
+    raw = g_term.orig_termios;
+
+    /* disable ctrl+s and ctrl+q */
+    raw.c_iflag &= ~IXON;
+
+    /* ensure 8th bit preserved */
+    raw.c_iflag &= ~ISTRIP;
+
+    /* disable ctrl+v */
+    raw.c_lflag &= ~IEXTEN;
+
+    /* disable showing charcters as they're typed */
+    raw.c_lflag &= ~ECHO;
+
+    /* disable canonical mode (read byte-by-byte) */
+    raw.c_lflag &= ~ICANON;
+
+    /* disable output processing */
+    raw.c_oflag &= ~OPOST;
+
+    /* ensure 8 bits per character */
+    raw.c_cflag |= CS8;
+
+    /* set minimum bytes to read for read() to return */
+    raw.c_cc[VMIN] = 0;
+
+    /* time in deciseconds before read() should return */
+    raw.c_cc[VTIME] = 1;
+
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
+        report_system_error(FILENAME ": failed to enter raw mode");
+        exit(1);
+    }
+}
+
+static void binary_puzzle_update_screen(BinaryPuzzle *self) {
+    const uint16_t min_row_ct = self->size * 3;
+    const uint16_t min_col_ct = self->size * 5;
+    uint16_t i, j;
+    uint8_t row, col;
+    StringBuilder *contents = string_builder_create();
+    const char *pls_expand_screen = "Screen size too small";
+    string_builder_set(contents, CLEAR_SCREEN RESET_CURSOR HIDE_CURSOR);
+    update_window_size();
+    if (g_term.row_ct >= min_row_ct && g_term.col_ct >= min_col_ct) {
+        /* TODO - display board */
+        for (row = 0; 2 * row < g_term.row_ct - min_row_ct; row++) {
+            string_builder_append(contents, "\r\n");
+        }
+
+        for (i = 0; i < self->size; i++) {
+            /* top */
+            for (col = 0; 2 * col < g_term.col_ct - min_col_ct; col++) {
+                string_builder_append(contents, " ");
+            }
+            for (j = 0; j < self->size; j++) {
+                if (i == self->i_selected && j == self->j_selected) {
+                    string_builder_append(contents, "╔═══╗");
+                } else {
+                    string_builder_append(contents, "┌───┐");
+                }
+            }
+            string_builder_append(contents, "\r\n");
+
+            /* middle */
+            for (col = 0; 2 * col < g_term.col_ct - min_col_ct; col++) {
+                string_builder_append(contents, " ");
+            }
+            for (j = 0; j < self->size; j++) {
+                if (i == self->i_selected && j == self->j_selected) {
+                    string_builder_append(contents, "║ ");
+                } else {
+                    string_builder_append(contents, "│ ");
+                }
+                if (!self->mask[i][j]) {
+                    switch (self->user_guesses[i][j]) {
+                    case CELL_ZERO:
+                        string_builder_append(contents, CYAN "0" RESET);
+                        break;
+                    case CELL_ONE:
+                        string_builder_append(contents, CYAN "1" RESET);
+                        break;
+                    case CELL_UNKNOWN:
+                        string_builder_append(contents, BLUE "_" RESET);
+                        break;
+                    default:
+                        string_builder_append(contents, RED "?" RESET);
+                        break;
+                    }
+                } else {
+                    string_builder_append(contents, self->solution[i][j]
+                                                        ? GREEN "1" RESET
+                                                        : GREEN "0" RESET);
+                }
+
+                if (i == self->i_selected && j == self->j_selected) {
+                    string_builder_append(contents, " ║");
+                } else {
+                    string_builder_append(contents, " │");
+                }
+            }
+            string_builder_append(contents, "\r\n");
+
+            /* bottom */
+            for (col = 0; 2 * col < g_term.col_ct - min_col_ct; col++) {
+                string_builder_append(contents, " ");
+            }
+            for (j = 0; j < self->size; j++) {
+                if (i == self->i_selected && j == self->j_selected) {
+                    string_builder_append(contents, "╚═══╝");
+                } else {
+                    string_builder_append(contents, "└───┘");
+                }
+            }
+            string_builder_append(contents, "\r\n");
+        }
+    } else {
+        for (row = 0; 2 * row < g_term.row_ct; row++) {
+            string_builder_append(contents, "\r\n");
+        }
+        if (g_term.col_ct >= strlen(pls_expand_screen)) {
+            for (col = 0; 2 * col < g_term.col_ct - strlen(pls_expand_screen);
+                 col++) {
+                string_builder_append(contents, " ");
+            }
+            string_builder_append(contents, pls_expand_screen);
+        }
+    }
+    write(STDOUT_FILENO, string_builder_to_string(contents),
+          string_builder_len(contents));
+    string_builder_destroy(contents);
+}
+
+void binary_puzzle_interactive(BinaryPuzzle *self) {
+    char key;
+    int read_status;
+    bool keep_playing = true;
+    enable_raw_mode();
+    self->user_guesses = (cell_state_t **)get_empty_board(
+        self, sizeof(cell_state_t), CELL_UNKNOWN);
+
+    while (keep_playing) {
+        binary_puzzle_update_screen(self);
+        read_status = read(STDIN_FILENO, &key, 1);
+        if (read_status == 1) {
+            switch (key) {
+            case 'q':
+                printf(CLEAR_SCREEN RESET_CURSOR SHOW_CURSOR);
+                keep_playing = false;
+                break;
+            case 'h':
+                if (self->j_selected > 0) {
+                    self->j_selected--;
+                }
+                break;
+            case 'j':
+                if (self->i_selected < self->size - 1) {
+                    self->i_selected++;
+                }
+                break;
+            case 'k':
+                if (self->i_selected > 0) {
+                    self->i_selected--;
+                }
+                break;
+            case 'l':
+                if (self->j_selected < self->size - 1) {
+                    self->j_selected++;
+                }
+                break;
+            case '\n':
+            case ' ':
+                switch (
+                    self->user_guesses[self->i_selected][self->j_selected]) {
+                case CELL_UNKNOWN:
+                    self->user_guesses[self->i_selected][self->j_selected]
+                        = CELL_ZERO;
+                    break;
+                case CELL_ZERO:
+                    self->user_guesses[self->i_selected][self->j_selected]
+                        = CELL_ONE;
+                    break;
+                case CELL_ONE:
+                    self->user_guesses[self->i_selected][self->j_selected]
+                        = CELL_UNKNOWN;
+                    break;
+                default:
+                    break;
+                }
+                break;
+            case '0':
+                self->user_guesses[self->i_selected][self->j_selected]
+                    = CELL_ZERO;
+                break;
+            case '1':
+                self->user_guesses[self->i_selected][self->j_selected]
+                    = CELL_ONE;
+                break;
+            default:
+                break;
+            }
+        } else if (read_status == -1 && errno != EAGAIN) {
+            report_system_error(FILENAME ": failed to get user input");
+            exit(1);
+        }
+    }
 }
 
 static cell_state_t cell_state_combine(size_t cell_ct, ...) {
@@ -49,7 +333,8 @@ static cell_state_t cell_state_combine(size_t cell_ct, ...) {
                 result = CELL_INVALID;
             } else if (current_cell_state == CELL_ZERO && result == CELL_ONE) {
                 result = CELL_INVALID;
-            } else if (result == CELL_UNKNOWN || current_cell_state == CELL_INVALID) {
+            } else if (result == CELL_UNKNOWN
+                       || current_cell_state == CELL_INVALID) {
                 result = current_cell_state;
             }
         }
@@ -208,8 +493,6 @@ static void binary_puzzle_print_initialization_frame(BinaryPuzzle *self,
                                                      bool **initialized,
                                                      bool sleep) {
     size_t i, j;
-    printf(CLRSCRN);
-
     for (i = 0; i < self->size; i++) {
         for (j = 0; j < self->size; j++) {
             if (!self->mask[i][j]) {
@@ -328,29 +611,6 @@ static cell_state_t binary_puzzle_get_expected_cell_state(BinaryPuzzle *self,
     return cell_state_combine(3, cell_state_a, cell_state_b, cell_state_c);
 }
 
-static bool **get_empty_board(BinaryPuzzle *self) {
-    size_t i;
-    bool *contents;
-    bool **board = calloc(self->size, sizeof(bool *));
-    if (board == NULL) {
-        report_system_error(FILENAME ": memory allocation failure");
-        return NULL;
-    }
-
-    contents = calloc(self->size * self->size, sizeof(bool));
-    if (contents == NULL) {
-        report_system_error(FILENAME ": memory allocation failure");
-        free(board);
-        return NULL;
-    }
-
-    for (i = 0; i < self->size; i++) {
-        board[i] = contents + i * self->size * sizeof(bool);
-    }
-
-    return board;
-}
-
 static solve_status_t
 binary_puzzle_initialize_solution(BinaryPuzzle *self, bool **initialized,
                                   uint16_t allowed_guesses) {
@@ -358,7 +618,8 @@ binary_puzzle_initialize_solution(BinaryPuzzle *self, bool **initialized,
     /* actual cell state */
     cell_state_t cell_state;
     solve_status_t solve_status = SOLVE_SUCCESS;
-    bool **frame_initialized = get_empty_board(self);
+    bool **frame_initialized
+        = (bool **)get_empty_board(self, sizeof(bool), false);
     bool updated, has_remaining_cells;
     if (frame_initialized == NULL) {
         return SOLVE_SYSTEM_ERROR;
@@ -415,7 +676,7 @@ binary_puzzle_solve_done:
  */
 static bool binary_puzzle_initialize(BinaryPuzzle *self) {
     bool successful;
-    bool **initialized = get_empty_board(self);
+    bool **initialized = (bool **)get_empty_board(self, sizeof(bool), false);
     if (initialized == NULL) {
         return false;
     }
@@ -430,8 +691,9 @@ static bool binary_puzzle_initialize(BinaryPuzzle *self) {
 
 static bool binary_puzzle_can_mask(BinaryPuzzle *self, size_t i, size_t j,
                                    uint16_t allowed_guesses) {
-    bool **fake_initialized = get_empty_board(self);
-    bool **fake_solution = get_empty_board(self);
+    bool **fake_initialized
+        = (bool **)get_empty_board(self, sizeof(bool), false);
+    bool **fake_solution = (bool **)get_empty_board(self, sizeof(bool), false);
     bool **real_solution;
     size_t k, l;
     cell_state_t cell_state;
@@ -473,15 +735,11 @@ binary_puzzle_initialize_mask(BinaryPuzzle *self,
                                      : difficulty == BINARY_PUZZLE_MEDIUM ? 3
                                                                           : 8;
     size_t i, j;
-    bool **contenders = get_empty_board(self);
+    bool **contenders = (bool **)get_empty_board(self, sizeof(bool), true);
     size_t contender_ct = self->size * self->size;
     size_t contender_idx;
     if (contenders == NULL) {
         return false;
-    }
-
-    for (i = 0; i < self->size * self->size; i++) {
-        (*contenders)[i] = true;
     }
 
     while (contender_ct > 0) {
@@ -520,7 +778,6 @@ binary_puzzle_initialize_mask(BinaryPuzzle *self,
 BinaryPuzzle *binary_puzzle_create(uint8_t size,
                                    binary_puzzle_difficulty_t difficulty) {
     BinaryPuzzle *new = NULL;
-    size_t i;
 
     if (size == 0 || size % 2 != 0) {
         report_logic_error(
@@ -533,17 +790,13 @@ BinaryPuzzle *binary_puzzle_create(uint8_t size,
         goto binary_puzzle_create_fail;
 
     new->size = size;
-    new->solution = get_empty_board(new);
+    new->solution = (bool **)get_empty_board(new, sizeof(bool), false);
     if (new->solution == NULL)
         goto binary_puzzle_create_fail;
 
-    new->mask = get_empty_board(new);
+    new->mask = (bool **)get_empty_board(new, sizeof(bool), true);
     if (new->mask == NULL)
         goto binary_puzzle_create_fail;
-
-    for (i = 0; i < size * size; i++) {
-        (*new->mask)[i] = true;
-    }
 
     if (binary_puzzle_initialize(new) != SOLVE_SUCCESS) {
         goto binary_puzzle_create_fail;
@@ -570,6 +823,10 @@ void binary_puzzle_destroy(BinaryPuzzle *self) {
         if (self->mask != NULL) {
             free(*self->mask);
             free(self->mask);
+        }
+        if (self->user_guesses != NULL) {
+            free(*self->user_guesses);
+            free(self->user_guesses);
         }
         free(self);
     }

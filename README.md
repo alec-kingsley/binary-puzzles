@@ -2,6 +2,8 @@
 
 Generates [binary puzzles](https://en.wikipedia.org/wiki/Takuzu)
 
+![demo](./assets/demo.gif)
+
 ## Building
 
 Run `make` to build. The resulting binary will be in `./bin/binary_puzzle`.

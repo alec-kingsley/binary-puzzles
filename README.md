@@ -2,13 +2,15 @@
 
 Generates interactive [binary puzzles](https://en.wikipedia.org/wiki/Takuzu)
 
-![demo](./assets/demo.gif)
+![playthrough demo](./assets/playthrough.gif)
 
 ## Building
 
 Run `make` to build. The resulting binary will be in `./bin/binary_puzzle`.
 
-To animate the creation of the puzzle like shown above, add the `-DDEBUG` flag to `CFLAGS`  in the `Makefile`.
+To animate the creation of the puzzle, add the `-DDEBUG` flag to `CFLAGS`  in the `Makefile`.
+
+![creation demo](./assets/demo.gif)
 
 ## Controls
 

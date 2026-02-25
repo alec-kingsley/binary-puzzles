@@ -156,7 +156,6 @@ static void binary_puzzle_update_screen(BinaryPuzzle *self) {
     string_builder_set(contents, CLEAR_SCREEN RESET_CURSOR HIDE_CURSOR);
     update_window_size();
     if (g_term.row_ct >= min_row_ct && g_term.col_ct >= min_col_ct) {
-        /* TODO - display board */
         for (row = 0; 2 * row < g_term.row_ct - min_row_ct; row++) {
             string_builder_append(contents, "\r\n");
         }
@@ -225,7 +224,9 @@ static void binary_puzzle_update_screen(BinaryPuzzle *self) {
                     string_builder_append(contents, "└───┘");
                 }
             }
-            string_builder_append(contents, "\r\n");
+            if (g_term.row_ct != min_row_ct || i != self->size) {
+                string_builder_append(contents, "\r\n");
+            }
         }
     } else {
         for (row = 0; 2 * row < g_term.row_ct; row++) {
@@ -416,7 +417,6 @@ static cell_state_t binary_puzzle_check_uniqueness_rule(BinaryPuzzle *self,
     size_t k, l;
     bool unique;
 
-    /* yeah GOOD LUCK updating THIS code */
     for (k = 0; k < self->size; k++) {
         if (k == i)
             goto skip_row_check;

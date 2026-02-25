@@ -53,12 +53,12 @@ static void **get_empty_board(BinaryPuzzle *self, uint8_t member_size,
     }
 
     for (i = 0; i < self->size; i++) {
-        board[i] = (uint8_t*)contents + i * self->size * member_size;
+        board[i] = (uint8_t *)contents + i * self->size * member_size;
     }
 
     if (default_value != 0) {
         for (i = 0; i < self->size * self->size; i++) {
-            *((uint8_t*)contents + i * member_size) = default_value;
+            *((uint8_t *)contents + i * member_size) = default_value;
         }
     }
 
@@ -489,6 +489,7 @@ static void binary_puzzle_print_initialization_frame(BinaryPuzzle *self,
                                                      bool **initialized,
                                                      bool sleep) {
     size_t i, j;
+    printf(CLEAR_SCREEN);
     for (i = 0; i < self->size; i++) {
         for (j = 0; j < self->size; j++) {
             if (!self->mask[i][j]) {
@@ -577,7 +578,8 @@ binary_puzzle_make_probable_guess(BinaryPuzzle *self, bool **initialized,
 #endif
     if ((solve_status = binary_puzzle_initialize_solution(self, initialized,
                                                           allowed_guesses))
-        != SOLVE_SUCCESS) {
+            != SOLVE_SUCCESS
+        && solve_status != SOLVE_OUT_OF_GUESSES) {
         self->solution[most_dramatic_i][most_dramatic_j]
             = cell_state != CELL_ONE;
 #ifdef DEBUG
@@ -671,18 +673,17 @@ binary_puzzle_solve_done:
  * Initialize binary puzzle. Return false on failure.
  */
 static bool binary_puzzle_initialize(BinaryPuzzle *self) {
-    bool successful;
+    solve_status_t solve_status;
     bool **initialized = (bool **)get_empty_board(self, sizeof(bool), false);
     if (initialized == NULL) {
         return false;
     }
 
-    successful
-        = binary_puzzle_initialize_solution(self, initialized, UINT16_MAX);
+    solve_status = binary_puzzle_initialize_solution(self, initialized, UINT16_MAX);
 
     free(*initialized);
     free(initialized);
-    return successful;
+    return solve_status;
 }
 
 static bool binary_puzzle_can_mask(BinaryPuzzle *self, size_t i, size_t j,
@@ -721,6 +722,8 @@ static bool binary_puzzle_can_mask(BinaryPuzzle *self, size_t i, size_t j,
     self->solution = real_solution;
     free(*fake_initialized);
     free(fake_initialized);
+    free(*fake_solution);
+    free(fake_solution);
     return can_mask;
 }
 

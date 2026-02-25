@@ -10,18 +10,6 @@ Run `make` to build. The resulting binary will be in `./bin/binary_puzzle`.
 
 To animate the creation of the puzzle like shown above, add the `-DDEBUG` flag to `CFLAGS`  in the `Makefile`.
 
-To just generate a binary puzzle and not interact with it, replace
-
-```c
-binary_puzzle_interactive(binary_puzzle);
-```
-
-with 
-
-```c
-binary_puzzle_print(binary_puzzle);
-```
-
 ## Controls
 
 `h`, `j`, `k` and `l` for movement

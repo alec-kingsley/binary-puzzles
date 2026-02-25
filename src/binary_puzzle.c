@@ -49,7 +49,7 @@ static cell_state_t cell_state_combine(size_t cell_ct, ...) {
                 result = CELL_INVALID;
             } else if (current_cell_state == CELL_ZERO && result == CELL_ONE) {
                 result = CELL_INVALID;
-            } else if (result == CELL_UNKNOWN) {
+            } else if (result == CELL_UNKNOWN || current_cell_state == CELL_INVALID) {
                 result = current_cell_state;
             }
         }
@@ -245,6 +245,10 @@ static solve_status_t
 binary_puzzle_initialize_solution(BinaryPuzzle *self, bool **initialized,
                                   uint16_t allowed_guesses);
 
+static cell_state_t binary_puzzle_get_expected_cell_state(BinaryPuzzle *self,
+                                                          bool **initialized,
+                                                          size_t i, size_t j);
+
 static float dramaticity(float probability) {
     return probability < 0.5 ? 1 - probability : probability;
 }
@@ -307,10 +311,9 @@ binary_puzzle_make_probable_guess(BinaryPuzzle *self, bool **initialized,
     return solve_status;
 }
 
-static cell_state_t
-binary_puzzle_get_expected_cell_state(BinaryPuzzle *self, bool **initialized,
-                                      size_t i, size_t j,
-                                      bool check_uniqueness) {
+static cell_state_t binary_puzzle_get_expected_cell_state(BinaryPuzzle *self,
+                                                          bool **initialized,
+                                                          size_t i, size_t j) {
     /* cell states according to the three rules */
     cell_state_t cell_state_a, cell_state_b, cell_state_c;
     /* check 3-in-a-row rule */
@@ -320,10 +323,7 @@ binary_puzzle_get_expected_cell_state(BinaryPuzzle *self, bool **initialized,
     cell_state_b = binary_puzzle_check_evenness_rule(self, initialized, i, j);
 
     /* check matching row/column rule */
-    cell_state_c
-        = check_uniqueness
-              ? binary_puzzle_check_uniqueness_rule(self, initialized, i, j)
-              : CELL_UNKNOWN;
+    cell_state_c = binary_puzzle_check_uniqueness_rule(self, initialized, i, j);
 
     return cell_state_combine(3, cell_state_a, cell_state_b, cell_state_c);
 }
@@ -377,7 +377,7 @@ binary_puzzle_initialize_solution(BinaryPuzzle *self, bool **initialized,
             for (j = 0; j < self->size; j++) {
                 if (!frame_initialized[i][j]) {
                     cell_state = binary_puzzle_get_expected_cell_state(
-                        self, frame_initialized, i, j, true);
+                        self, frame_initialized, i, j);
                     if (cell_state == CELL_ONE || cell_state == CELL_ZERO) {
                         self->solution[i][j] = cell_state == CELL_ONE;
                         frame_initialized[i][j] = true;
@@ -447,34 +447,18 @@ static bool binary_puzzle_can_mask(BinaryPuzzle *self, size_t i, size_t j,
     fake_initialized[i][j] = false;
     real_solution = self->solution;
     self->solution = fake_solution;
-    cell_state = binary_puzzle_get_expected_cell_state(self, fake_initialized,
-                                                       i, j, true);
+    cell_state
+        = binary_puzzle_get_expected_cell_state(self, fake_initialized, i, j);
     if ((cell_state == CELL_ONE && real_solution[i][j])
         || (cell_state == CELL_ZERO && !real_solution[i][j])) {
         can_mask = true;
     } else {
         fake_initialized[i][j] = true;
         fake_solution[i][j] = !real_solution[i][j];
-        for (k = 0; k < self->size && can_mask; k++) {
-            if (!fake_initialized[i][k]) {
-                if (binary_puzzle_get_expected_cell_state(
-                        self, fake_initialized, i, k, false)
-                    == CELL_INVALID) {
-                    can_mask = true;
-                }
-            }
-            if (can_mask && !fake_initialized[k][j]) {
-                if (binary_puzzle_get_expected_cell_state(
-                        self, fake_initialized, k, j, false)
-                    == CELL_INVALID) {
-                    can_mask = true;
-                }
-            }
-        }
 
-        can_mask &= binary_puzzle_initialize_solution(self, fake_initialized,
-                                                      allowed_guesses)
-                    == SOLVE_REACHED_INVALID;
+        can_mask = binary_puzzle_initialize_solution(self, fake_initialized,
+                                                     allowed_guesses)
+                   == SOLVE_REACHED_INVALID;
     }
     self->solution = real_solution;
     free(*fake_initialized);

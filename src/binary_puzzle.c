@@ -263,24 +263,20 @@ void binary_puzzle_interactive(BinaryPuzzle *self) {
                 keep_playing = false;
                 break;
             case 'h':
-                if (self->j_selected > 0) {
-                    self->j_selected--;
-                }
+                self->j_selected += self->size - 1;
+                self->j_selected %= self->size;
                 break;
             case 'j':
-                if (self->i_selected < self->size - 1) {
-                    self->i_selected++;
-                }
+                self->i_selected++;
+                self->i_selected %= self->size;
                 break;
             case 'k':
-                if (self->i_selected > 0) {
-                    self->i_selected--;
-                }
+                self->i_selected += self->size - 1;
+                self->i_selected %= self->size;
                 break;
             case 'l':
-                if (self->j_selected < self->size - 1) {
-                    self->j_selected++;
-                }
+                self->j_selected++;
+                self->j_selected %= self->size;
                 break;
             case '\n':
             case ' ':
